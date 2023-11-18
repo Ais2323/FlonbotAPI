@@ -12,9 +12,7 @@ conn = sqlite3.connect('ReplyDatabase.db')
 cursor = conn.cursor()
 # create table
 sql = 'CREATE TABLE "ignore_word" ( \
-	"id"	INTEGER NOT NULL UNIQUE, \
-	"word"	TEXT NOT NULL UNIQUE, \
-	PRIMARY KEY("id" AUTOINCREMENT) \
+	"word"	TEXT NOT NULL UNIQUE \
 );'
 cursor.execute(sql)
 sql = 'CREATE TABLE "reply_message" ( \

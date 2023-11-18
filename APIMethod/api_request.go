@@ -1,8 +1,9 @@
 package APIMethod
 
 import (
+	tool "FlonBotApi/Helper"
+	komica "FlonBotApi/KomicaReply"
 	"encoding/json"
-	"fmt"
 	"net/http"
 )
 
@@ -22,13 +23,15 @@ func RequestReply(w http.ResponseWriter, r *http.Request) {
 	// if only one expected
 	word := r.URL.Query().Get("word")
 	if word == "" {
-		result.ErrorMessage = "Need Param word example:http://127.0.0.1/reply?word=hello Word"
+		result.ErrorMessage = "Need Param word example:http://127.0.0.1/reply?word=hello%20Word"
 		returnData, _ := json.Marshal(result)
 		w.Write(returnData)
 		return
 	}
-	fmt.Printf("input:%s", word)
-	result.Reply = word
+	//fmt.Printf("input:%s", word)
+	splitWord := tool.SpliteWord(word)
+	replyOnKomica := komica.GetReplyOnKomica(splitWord)
+	result.Reply = replyOnKomica
 	returnData, _ := json.Marshal(result)
 	w.Write(returnData)
 	return
