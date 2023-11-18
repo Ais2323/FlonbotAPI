@@ -1,16 +1,18 @@
-package FlonBotAPI
+package main
 
 import (
+	Method "FlonBotApi/APIMethod"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 )
 
 // 主程式
 func main() {
+	InitRequest()
+
 	var ipAddress = "127.0.0.1"
-	var postAddress = 8080
+	var postAddress = 6667
 	var fullIPAddr = fmt.Sprintf("%s:%d", ipAddress, postAddress)
 	var addr = fmt.Sprintf(":%d", postAddress)
 	fmt.Printf("Local IP Address: %s\n", fullIPAddr)
@@ -19,14 +21,6 @@ func main() {
 	}
 }
 
-func GetLocalIP() net.IP {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-
-	localAddress := conn.LocalAddr().(*net.UDPAddr)
-
-	return localAddress.IP
+func InitRequest() {
+	http.HandleFunc("/reply", Method.RequestReply)
 }
