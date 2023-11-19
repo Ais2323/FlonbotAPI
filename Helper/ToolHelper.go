@@ -2,19 +2,61 @@ package helper
 
 import (
 	"math/rand"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 )
 
 const (
-	_MAX_WORD_LENGTH = 50
-	_MIN_WORD_LENGTH = 2
+	_MAX_WORD_LENGTH    = 50
+	_MIN_CN_WORD_LENGTH = 2
+	_MIN_EN_WORD_LENGTH = 1
+	_EN_WORD_REGEXP     = "^[A-Za-z0-9_ \\s \\! \\' \\\" \\\\ \\+ \\* \\? \\^ \\$ \\[ \\] \\{ \\} \\( \\) \\| \\/]+$"
 )
 
 // 拆字
 func SpliteWord(oriWord string) []string {
-	// TODO: Need Check EN or CN
+	isEnglish, err := regexp.MatchString(_EN_WORD_REGEXP, oriWord)
+	result := []string{}
+	if err != nil || isEnglish == false {
+		result = splitChineseWord(oriWord)
+	} else {
+		result = splitEnglishWord(oriWord)
+	}
+
+	return result
+}
+func splitEnglishWord(oriWord string) []string {
+	subWords := strings.Split(oriWord, " ")
+	if len(subWords) > _MAX_WORD_LENGTH {
+		// 隨機取50字
+		maxEndIdx := len(subWords) - _MAX_WORD_LENGTH
+		randSeed := rand.NewSource(time.Now().UnixNano())
+		randData := rand.New(randSeed)
+		targetIdx := randData.Intn(maxEndIdx)
+		subWords = subWords[targetIdx : targetIdx+_MAX_WORD_LENGTH]
+	}
+
+	// 文字拆分
+	result := []string{}
+	if len(subWords) < _MIN_EN_WORD_LENGTH {
+		return result
+	}
+	maxLength := len(subWords)
+	// 目前長度 慢慢縮減字數
+	nowLength := maxLength
+	for nowLength >= _MIN_EN_WORD_LENGTH {
+		for startIdx := 0; startIdx <= (maxLength - nowLength); startIdx++ {
+			target := strings.Join(subWords[startIdx:startIdx+nowLength], " ")
+			result = append(result, target)
+		}
+		nowLength--
+	}
+
+	return result
+}
+func splitChineseWord(oriWord string) []string {
 	// 限制最大長度
 	if len([]rune(oriWord)) > _MAX_WORD_LENGTH {
 		// 隨機取50字
@@ -26,13 +68,16 @@ func SpliteWord(oriWord string) []string {
 	}
 	// 文字拆分
 	result := []string{}
+	if len([]rune(oriWord)) < _MIN_EN_WORD_LENGTH {
+		return result
+	}
 	// 分文字段落
 	subString := strings.FieldsFunc(oriWord, splitSign)
 	for _, word := range subString {
 		maxLength := len([]rune(word))
 		// 目前長度 慢慢縮減字數
 		nowLength := maxLength
-		for nowLength >= _MIN_WORD_LENGTH {
+		for nowLength >= _MIN_CN_WORD_LENGTH {
 			for startIdx := 0; startIdx <= (maxLength - nowLength); startIdx++ {
 				target := string([]rune(word)[startIdx : startIdx+nowLength])
 				result = append(result, target)

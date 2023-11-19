@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -23,20 +26,21 @@ const (
 	_TEMP_POST_COUNT   = 10000
 	_REQUEST_NEXT_TIME = 5
 	_REQUEST_ALL_TIME  = 30
+	_REPLY_REGEXP      = "(\\>\\>|\\>No\\.)"
 )
 
 type komicaPosts struct {
-	Posts []komicaPost `json:"posts"`
+	Posts []KomicaPost `json:"posts"`
 }
 
-type komicaPost struct {
+type KomicaPost struct {
 	No    int    `json:"no"`
 	Resto int    `json:"resto"`
 	Com   string `json:"com"`
 }
 type komicaBoard struct {
 	lastNo int
-	Posts  []komicaPost `json:"posts"`
+	Posts  []KomicaPost `json:"posts"`
 }
 
 var komicaAllPosts = []komicaBoard{}
@@ -86,7 +90,6 @@ func getKomicaDatabase() {
 			if posts.Posts[idx].No > maxNo {
 				maxNo = posts.Posts[idx].No
 			}
-			fmt.Println(posts.Posts[idx])
 		}
 		// 更新最後拿到的No
 		borad.lastNo = maxNo
@@ -98,7 +101,7 @@ func getKomicaDatabase() {
 		}
 	}
 }
-func removePost(s []komicaPost, i int) []komicaPost {
+func removePost(s []KomicaPost, i int) []KomicaPost {
 	// 移除 並把最後移到該位置
 	s[i] = s[len(s)-1]
 	return s[:len(s)-1]
@@ -120,24 +123,123 @@ func CloseRequest() {
 
 // K島回復
 func GetReplyOnKomica(words []string) string {
-	findMatchComment()
-	findReplyComment()
-	randomReplyComment()
-	// TODO: 還沒做 先把他第一個關鍵字丟回去
-	return words[0]
+	result := []ReplyData{}
+	for _, board := range komicaAllPosts {
+		boardResult := findMatchComment(words, &board)
+		boardResult = findReplyComment(boardResult, &board)
+		if len(boardResult) > 0 {
+			result = append(result, boardResult...)
+		}
+	}
+	// TODO: 先隨機丟回去
+	reply := ""
+	if len(result) > 0 {
+		randSeed := rand.NewSource(time.Now().UnixNano())
+		randData := rand.New(randSeed)
+		startIdx := randData.Intn(len(result))
+		for i := 0; i < len(result); i++ {
+			post := result[startIdx]
+			if len(post.ReplyString) > 0 {
+				targetIdx := randData.Intn(len(post.ReplyString))
+				reply = post.ReplyString[targetIdx]
+				break
+			}
+			startIdx++
+			if startIdx >= len(result) {
+				startIdx = 0
+			}
+		}
+	}
+	return reply
 }
 
-// TODO: 找符合該訊息的文章 預計輸出 {符合分數(字數 數量) 文章物件}
-func findMatchComment() {
+type ReplyData struct {
+	Keywords    []string     // 對應回覆關鍵字
+	Post        KomicaPost   // 符合關鍵字文章物件
+	ReplyPost   []KomicaPost // 對應回覆文章物件
+	ReplyString []string     // 拆出回覆結果
+}
 
+// 找符合該訊息的文章
+func findMatchComment(words []string, targetBoard *komicaBoard) []ReplyData {
+	posts := targetBoard.Posts
+	var result = []ReplyData{}
+	for _, post := range posts {
+		nowPost := ReplyData{}
+		nowPost.Post = post
+		com := post.Com // TODO: 需要排除不必要資訊
+		for _, keyword := range words {
+			// 檢查是否有比較多文字符合的關鍵字包含在裡面
+			isFind := false
+			for _, findKeyword := range nowPost.Keywords {
+				isFind = strings.Index(findKeyword, keyword) >= 0
+				if isFind {
+					break
+				}
+			}
+			if isFind {
+				continue
+			}
+			// 檢查是否包含
+			isSuccess := strings.Index(com, keyword) >= 0
+			if isSuccess == false {
+				continue
+			}
+			nowPost.Keywords = append(nowPost.Keywords, keyword)
+		}
+		// 有成功符合關鍵字取出
+		if len(nowPost.Keywords) > 0 {
+			result = append(result, nowPost)
+		}
+	}
+	return result
 }
 
 // TODO: 找回覆該文章的 預計輸出 {符合分數(字數 數量) 回覆字串}
-func findReplyComment() {
-
+func findReplyComment(result []ReplyData, targetBoard *komicaBoard) []ReplyData {
+	posts := targetBoard.Posts
+	for _, post := range posts {
+		com := post.Com // TODO: 需要排除不必要資訊
+		for idx, replyData := range result {
+			// 找>>123456
+			reOnDirReply := fmt.Sprintf("%s%d", _REPLY_REGEXP, replyData.Post.No)
+			isReplyOnComment, err := regexp.MatchString(reOnDirReply, com)
+			if err == nil && isReplyOnComment {
+				result[idx].ReplyPost = append(result[idx].ReplyPost, post)
+				result[idx].ReplyString = append(result[idx].ReplyString, replyCommentSplit(com, reOnDirReply))
+				continue
+			}
+			// 找>>關鍵字
+			reReply := fmt.Sprintf("%s.*%s.*\\n", "(\\>\\>)", replyData.Keywords[0])
+			if len(replyData.Keywords) > 1 {
+				for _, keyword := range replyData.Keywords[1:] {
+					reData := fmt.Sprintf("%s.*%s.*\\n", "(\\>\\>)", keyword)
+					reReply = fmt.Sprintf("%s||%s", reReply, reData)
+				}
+			}
+			isReplyKeywordOnComment, err := regexp.MatchString(reReply, com)
+			if err == nil && isReplyKeywordOnComment {
+				result[idx].ReplyPost = append(result[idx].ReplyPost, post)
+				result[idx].ReplyString = append(result[idx].ReplyString, replyCommentSplit(com, reReply))
+				continue
+			}
+			// 找文章開頭
+			if replyData.Post.Resto == 0 && post.Resto == replyData.Post.No { // 是開頭文章 且回覆對象是目標No
+				result[idx].ReplyPost = append(result[idx].ReplyPost, post)
+				result[idx].ReplyString = append(result[idx].ReplyString, post.Com)
+				continue
+			}
+		}
+	}
+	return result
 }
 
-// TODO: 按分數比分輸出回覆 預計輸出 {回覆字串}
-func randomReplyComment() {
-
+func replyCommentSplit(com string, targetNo string) string {
+	// 擷取其中文字
+	re := regexp.MustCompile(fmt.Sprintf("(%s\\n)[\\s\\S]*(%s|[\\s\\S]$)", targetNo, _REPLY_REGEXP))
+	result := re.FindString(com)
+	// 刪去回覆的>>
+	re2 := regexp.MustCompile(fmt.Sprintf("([^((%s)\\n)|%s])[\\s\\S]*", targetNo, _REPLY_REGEXP))
+	result = re2.FindString(result)
+	return result
 }

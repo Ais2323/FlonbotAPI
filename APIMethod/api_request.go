@@ -28,7 +28,6 @@ func RequestReply(w http.ResponseWriter, r *http.Request) {
 		w.Write(returnData)
 		return
 	}
-	//fmt.Printf("input:%s", word)
 	splitWord := tool.SpliteWord(word)
 	replyOnKomica := komica.GetReplyOnKomica(splitWord)
 	result.Reply = replyOnKomica
